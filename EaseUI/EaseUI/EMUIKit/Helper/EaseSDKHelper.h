@@ -20,8 +20,6 @@
 #import <Hyphenate/Hyphenate.h>
 #endif
 
-/** @brief 登录状态变更的通知 */
-#define KNOTIFICATION_LOGINCHANGE @"loginStateChange"
 /** @brief 实时音视频呼叫 */
 #define KNOTIFICATION_CALL @"callOutWithChatter"
 /** @brief 关闭实时音视频 */
