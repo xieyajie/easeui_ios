@@ -66,6 +66,10 @@ typedef enum : NSUInteger {
 @property (nonatomic) BOOL isPlayingAudio;
 @property (nonatomic, strong) NSMutableArray *atTargets;
 
+@property (nonatomic) BOOL isPrevRecvMsg;
+@property (nonatomic, strong) NSObject *recvMsgBufferLock;
+@property (nonatomic, strong) NSMutableArray *recvMsgBuffer;
+
 @end
 
 @implementation EaseMessageViewController
@@ -92,6 +96,10 @@ typedef enum : NSUInteger {
         _deleteConversationIfNull = YES;
         _scrollToBottomWhenAppear = YES;
         _messsagesSource = [NSMutableArray array];
+        
+        _isPrevRecvMsg = NO;
+        _recvMsgBufferLock = [[NSObject alloc] init];
+        _recvMsgBuffer = [[NSMutableArray alloc] init];
         
         [_conversation markAllMessagesAsRead:nil];
     }
@@ -225,7 +233,7 @@ typedef enum : NSUInteger {
 {
     NSString *chatroomName = chatroom.subject ? chatroom.subject : @"";
     NSUserDefaults *ud = [NSUserDefaults standardUserDefaults];
-    NSString *key = [NSString stringWithFormat:@"OnceJoinedChatrooms_%@", [[EMClient sharedClient] currentUsername]];
+    NSString *key = [[NSString alloc] initWithFormat:@"OnceJoinedChatrooms_%@", [[EMClient sharedClient] currentUsername]];
     NSMutableDictionary *chatRooms = [NSMutableDictionary dictionaryWithDictionary:[ud objectForKey:key]];
     if (![chatRooms objectForKey:chatroom.chatroomId])
     {
@@ -253,7 +261,7 @@ typedef enum : NSUInteger {
                 EaseMessageViewController *strongSelf = weakSelf;
                 [strongSelf hideHud];
                 if (error != nil) {
-                    [strongSelf showHint:[NSString stringWithFormat:NSEaseLocalizedString(@"chatroom.joinFailed",@"join chatroom \'%@\' failed"), chatroomId]];
+                    [strongSelf showHint:[[NSString alloc] initWithFormat:NSEaseLocalizedString(@"chatroom.joinFailed",@"join chatroom \'%@\' failed"), chatroomId]];
                 } else {
                     strongSelf.isJoinedChatroom = YES;
                     [strongSelf saveChatroom:chatroom];
@@ -276,28 +284,28 @@ typedef enum : NSUInteger {
 - (void)didReceiveUserJoinedChatroom:(EMChatroom *)aChatroom
                             username:(NSString *)aUsername
 {
-    CGRect frame = self.chatToolbar.frame;
-    [self showHint:[NSString stringWithFormat:NSEaseLocalizedString(@"chatroom.join", @"\'%@\'join chatroom\'%@\'"), aUsername, aChatroom.chatroomId] yOffset:-frame.size.height + KHintAdjustY];
+//    CGRect frame = self.chatToolbar.frame;
+//    [self showHint:[NSString stringWithFormat:NSEaseLocalizedString(@"chatroom.join", @"\'%@\'join chatroom\'%@\'"), aUsername, aChatroom.chatroomId] yOffset:-frame.size.height + KHintAdjustY];
 }
 
 - (void)didReceiveUserLeavedChatroom:(EMChatroom *)aChatroom
                             username:(NSString *)aUsername
 {
-    CGRect frame = self.chatToolbar.frame;
-    [self showHint:[NSString stringWithFormat:NSEaseLocalizedString(@"chatroom.leave.hint", @"\'%@\'leave chatroom\'%@\'"), aUsername, aChatroom.chatroomId] yOffset:-frame.size.height + KHintAdjustY];
+//    CGRect frame = self.chatToolbar.frame;
+//    [self showHint:[NSString stringWithFormat:NSEaseLocalizedString(@"chatroom.leave.hint", @"\'%@\'leave chatroom\'%@\'"), aUsername, aChatroom.chatroomId] yOffset:-frame.size.height + KHintAdjustY];
 }
 
 - (void)didReceiveKickedFromChatroom:(EMChatroom *)aChatroom
                               reason:(EMChatroomBeKickedReason)aReason
 {
-    if ([_conversation.conversationId isEqualToString:aChatroom.chatroomId])
-    {
-        _isKicked = YES;
-        CGRect frame = self.chatToolbar.frame;
-        [self showHint:[NSString stringWithFormat:NSEaseLocalizedString(@"chatroom.remove", @"be removed from chatroom\'%@\'"), aChatroom.chatroomId] yOffset:-frame.size.height + KHintAdjustY];
-        [self.navigationController popToViewController:self animated:NO];
-        [self.navigationController popViewControllerAnimated:YES];
-    }
+//    if ([_conversation.conversationId isEqualToString:aChatroom.chatroomId])
+//    {
+//        _isKicked = YES;
+//        CGRect frame = self.chatToolbar.frame;
+//        [self showHint:[NSString stringWithFormat:NSEaseLocalizedString(@"chatroom.remove", @"be removed from chatroom\'%@\'"), aChatroom.chatroomId] yOffset:-frame.size.height + KHintAdjustY];
+//        [self.navigationController popToViewController:self animated:NO];
+//        [self.navigationController popViewControllerAnimated:YES];
+//    }
 }
 
 #pragma mark - getter
@@ -639,8 +647,7 @@ typedef enum : NSUInteger {
 - (BOOL)shouldSendHasReadAckForMessage:(EMMessage *)message
                                   read:(BOOL)read
 {
-    if (message.chatType != EMChatTypeChat || message.isReadAcked || message.direction == EMMessageDirectionSend || ([UIApplication sharedApplication].applicationState == UIApplicationStateBackground) || !self.isViewDidAppear)
-    {
+    if (message.chatType != EMChatTypeChat || message.isReadAcked || message.direction == EMMessageDirectionSend || ([UIApplication sharedApplication].applicationState == UIApplicationStateBackground) || !self.isViewDidAppear) {
         return NO;
     }
     
@@ -648,12 +655,9 @@ typedef enum : NSUInteger {
     if (((body.type == EMMessageBodyTypeVideo) ||
          (body.type == EMMessageBodyTypeVoice) ||
          (body.type == EMMessageBodyTypeImage)) &&
-        !read)
-    {
+        !read) {
         return NO;
-    }
-    else
-    {
+    } else {
         return YES;
     }
 }
@@ -669,30 +673,18 @@ typedef enum : NSUInteger {
 - (void)_sendHasReadResponseForMessages:(NSArray*)messages
                                  isRead:(BOOL)isRead
 {
-    NSMutableArray *unreadMessages = [NSMutableArray array];
-    for (NSInteger i = 0; i < [messages count]; i++)
-    {
+    for (NSInteger i = 0; i < [messages count]; i++) {
         EMMessage *message = messages[i];
         BOOL isSend = YES;
         if (_dataSource && [_dataSource respondsToSelector:@selector(messageViewController:shouldSendHasReadAckForMessage:read:)]) {
             isSend = [_dataSource messageViewController:self
                          shouldSendHasReadAckForMessage:message read:isRead];
-        }
-        else{
+        } else {
             isSend = [self shouldSendHasReadAckForMessage:message
                                                      read:isRead];
         }
         
-        if (isSend)
-        {
-            [unreadMessages addObject:message];
-        }
-    }
-    
-    if ([unreadMessages count])
-    {
-        for (EMMessage *message in unreadMessages)
-        {
+        if (isSend) {
             [[EMClient sharedClient].chatManager sendMessageReadAck:message completion:nil];
         }
     }
@@ -704,11 +696,8 @@ typedef enum : NSUInteger {
     if (_dataSource && [_dataSource respondsToSelector:@selector(messageViewControllerShouldMarkMessagesAsRead:)]) {
         isMark = [_dataSource messageViewControllerShouldMarkMessagesAsRead:self];
     }
-    else{
-        if (([UIApplication sharedApplication].applicationState == UIApplicationStateBackground) || !self.isViewDidAppear)
-        {
-            isMark = NO;
-        }
+    else if (([UIApplication sharedApplication].applicationState == UIApplicationStateBackground) || !self.isViewDidAppear) {
+        isMark = NO;
     }
     
     return isMark;
@@ -1623,23 +1612,95 @@ typedef enum : NSUInteger {
 
 #pragma mark - Hyphenate
 
-#pragma mark - EMChatManagerDelegate
+#pragma mark - EMChatManagerDelega
 
 - (void)messagesDidReceive:(NSArray *)aMessages
 {
-    for (EMMessage *message in aMessages) {
-        if ([self.conversation.conversationId isEqualToString:message.conversationId]) {
-            [self addMessageToDataSource:message progress:nil];
-            
-            [self _sendHasReadResponseForMessages:@[message]
-                                           isRead:NO];
-            
-            if ([self _shouldMarkMessageAsRead])
-            {
-                [self.conversation markMessageAsReadWithId:message.messageId error:nil];
+//    BOOL isMarkRead = [self _shouldMarkMessageAsRead];
+//
+//    NSMutableArray *array = [[NSMutableArray alloc] init];
+//    for (EMMessage *message in aMessages) {
+//        if ([self.conversation.conversationId isEqualToString:message.conversationId]) {
+//            [array addObject:message];
+//
+//            if (isMarkRead) {
+//                [self.conversation markMessageAsReadWithId:message.messageId error:nil];
+//            }
+//        }
+//    }
+//
+//    [self.messsagesSource addObjectsFromArray:aMessages];
+//    __weak EaseMessageViewController *weakSelf = self;
+//    dispatch_async(_messageQueue, ^{
+//        NSArray *messages = [weakSelf formatMessages:array];
+//
+//        dispatch_async(dispatch_get_main_queue(), ^{
+//            [weakSelf.dataArray addObjectsFromArray:messages];
+//            [weakSelf.tableView reloadData];
+//            [weakSelf.tableView scrollToRowAtIndexPath:[NSIndexPath indexPathForRow:[weakSelf.dataArray count] - 1 inSection:0] atScrollPosition:UITableViewScrollPositionBottom animated:YES];
+//        });
+//    });
+//
+//    [self _sendHasReadResponseForMessages:array isRead:NO];
+    
+    //压测走以下代码
+    @synchronized (self.recvMsgBufferLock) {
+        [self.recvMsgBuffer addObjectsFromArray:aMessages];
+    }
+    
+    __weak typeof(self) weakself = self;
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(3 * NSEC_PER_SEC)), _messageQueue, ^{
+        NSArray *currentMsgs = nil;
+        @synchronized (self.recvMsgBufferLock) {
+            currentMsgs = [[NSArray alloc] initWithArray:weakself.recvMsgBuffer];
+            [weakself.recvMsgBuffer removeAllObjects];
+        }
+        
+        if ([currentMsgs count] == 0) {
+            if (weakself.isPrevRecvMsg) {
+                dispatch_async(dispatch_get_main_queue(), ^{
+                    [weakself.tableView reloadData];
+//                    [weakself.tableView scrollToRowAtIndexPath:[NSIndexPath indexPathForRow:[weakself.dataArray count] - 1 inSection:0] atScrollPosition:UITableViewScrollPositionBottom animated:NO];
+                });
+            }
+            weakself.isPrevRecvMsg = NO;
+            return ;
+        }
+        
+        weakself.isPrevRecvMsg = YES;
+        NSMutableArray *array = [[NSMutableArray alloc] init];
+        for (EMMessage *message in currentMsgs) {
+            if ([weakself.conversation.conversationId isEqualToString:message.conversationId]) {
+                EaseMessageModel *model = [[EaseMessageModel alloc] initWithMessage:message];
+                model.avatarImage = [UIImage imageNamed:@"EaseUIResource.bundle/user"];
+                model.failImageName = @"imageDownloadFail";
+                [array addObject:model];
             }
         }
-    }
+        
+        [weakself.dataArray addObjectsFromArray:array];
+//        [weakself.tableView reloadData];
+//        [weakself.tableView scrollToRowAtIndexPath:[NSIndexPath indexPathForRow:[weakself.dataArray count] - 1 inSection:0] atScrollPosition:UITableViewScrollPositionBottom animated:YES];
+    });
+    
+//    NSMutableArray *array = [[NSMutableArray alloc] init];
+//    for (EMMessage *message in aMessages) {
+//        if ([self.conversation.conversationId isEqualToString:message.conversationId]) {
+//            EaseMessageModel *model = [[EaseMessageModel alloc] initWithMessage:message];
+//            model.avatarImage = [UIImage imageNamed:@"EaseUIResource.bundle/user"];
+//            model.failImageName = @"imageDownloadFail";
+//            [array addObject:model];
+//        }
+//    }
+//
+//    __weak EaseMessageViewController *weakSelf = self;
+//    dispatch_async(_messageQueue, ^{
+//        dispatch_async(dispatch_get_main_queue(), ^{
+//            [weakSelf.dataArray addObjectsFromArray:array];
+////            [weakSelf.tableView reloadData];
+////            [weakSelf.tableView scrollToRowAtIndexPath:[NSIndexPath indexPathForRow:[weakSelf.dataArray count] - 1 inSection:0] atScrollPosition:UITableViewScrollPositionBottom animated:YES];
+//        });
+//    });
 }
 
 - (void)cmdMessagesDidReceive:(NSArray *)aCmdMessages
@@ -1956,7 +2017,12 @@ typedef enum : NSUInteger {
             }
         }
     }
-    [self sendTextMessage:text withExt:ext];
+    
+//    [self sendTextMessage:text withExt:ext];
+    
+//    for (int i = 0; i < 2000; i++) {
+//        [self sendTextMessage:@(i).stringValue withExt:nil];
+//    }
 }
 
 - (void)sendTextMessage:(NSString *)text withExt:(NSDictionary*)ext

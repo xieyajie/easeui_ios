@@ -387,7 +387,7 @@ NSString *const EaseMessageCellIdentifierSendFile = @"EaseMessageCellSendFile";
                     [_bubbleView.voiceImageView stopAnimating];
                 }
                 
-                _bubbleView.voiceDurationLabel.text = [NSString stringWithFormat:@"%d''",(int)_model.mediaDuration];
+                _bubbleView.voiceDurationLabel.text = [[NSString alloc] initWithFormat:@"%d''",(int)_model.mediaDuration];
             }
                 break;
             case EMMessageBodyTypeVideo:

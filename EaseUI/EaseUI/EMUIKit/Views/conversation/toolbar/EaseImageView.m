@@ -160,7 +160,7 @@
         self.badgeView.text = @"N+";
     }
     else{
-       self.badgeView.text = [NSString stringWithFormat:@"%ld", (long)_badge];
+       self.badgeView.text = [[NSString alloc] initWithFormat:@"%ld", (long)_badge];
     }
 }
 
